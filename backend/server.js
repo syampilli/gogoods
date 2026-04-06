@@ -12,6 +12,7 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  FRONTEND_URL=https://gogoods-rho.vercel.app
   process.env.FRONTEND_URL,  // Vercel URL
 ].filter(Boolean);
 
