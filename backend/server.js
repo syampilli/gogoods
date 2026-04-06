@@ -5,49 +5,64 @@ const http = require('http');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
-const app    = express();
+const app = express();
 const server = http.createServer(app);
 
-// CORS — Vercel URL తర్వాత add చేస్తాం
+// ✅ Allowed Origins
 const allowedOrigins = [
   'http://localhost:5173',
-  'http://localhost:3000',//gogoods-rho.vercel.app
-  process.env.FRONTEND_URL,  // Vercel URL
-].filter(Boolean);
+  'http://localhost:3000',
+  'https://gogoods-rho.vercel.app'
+];
 
+// ✅ Socket.io Setup
 const io = new Server(server, {
   cors: {
-    origin:  allowedOrigins,
-    methods: ['GET','POST','PUT','DELETE']
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
   }
 });
 
 app.set('io', io);
 
+// ✅ CORS Middleware (MAIN FIX)
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed: " + origin));
+    }
+  },
   credentials: true
 }));
+
+// ✅ FIXED Preflight (NO CRASH 🔥)
+app.options(/.*/, cors());
+
+// ✅ Middleware
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-// Routes
-app.use('/api/auth',          require('./routes/auth'));
-app.use('/api/orders',        require('./routes/orders'));
-app.use('/api/admin',         require('./routes/admin'));
-app.use('/api/chat',          require('./routes/chat'));
+// ✅ Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/chat', require('./routes/chat'));
 app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/upload',        require('./routes/upload'));
-app.use('/api/wallet',        require('./routes/wallet'));
-app.use('/api/promo',         require('./routes/promo'));
-app.use('/api/analytics',     require('./routes/analytics'));
-app.use('/api/profile',       require('./routes/profile'));
+app.use('/api/upload', require('./routes/upload'));
+app.use('/api/wallet', require('./routes/wallet'));
+app.use('/api/promo', require('./routes/promo'));
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/profile', require('./routes/profile'));
 
-app.get('/', (req, res) =>
-  res.json({ message: 'GoGoods API running!' })
-);
+// ✅ Test Route
+app.get('/', (req, res) => {
+  res.json({ message: 'GoGoods API running!' });
+});
 
-// Socket.io
+// ✅ Socket.io Events
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -69,6 +84,7 @@ io.on('connection', (socket) => {
   });
 });
 
+// ✅ MongoDB + Server Start
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected!');
