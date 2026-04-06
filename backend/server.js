@@ -8,42 +8,52 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Allowed Origins
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://gogoods-rho.vercel.app'
-];
-
-// ✅ Socket.io Setup
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-  }
-});
-
-app.set('io', io);
-
-// ✅ CORS Middleware (MAIN FIX)
-app.use(cors({
+// ✅ Dynamic CORS (handles ALL vercel deployments 🔥)
+const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (
+      !origin || // Postman / mobile apps
+      origin.includes("localhost") ||
+      origin.includes("vercel.app")
+    ) {
       callback(null, true);
     } else {
       callback(new Error("CORS not allowed: " + origin));
     }
   },
   credentials: true
-}));
+};
 
-// ✅ FIXED Preflight (NO CRASH 🔥)
-app.options(/.*/, cors());
+// ✅ Apply CORS
+app.use(cors(corsOptions));
+
+// ✅ FIXED Preflight (no crash)
+app.options(/.*/, cors(corsOptions));
 
 // ✅ Middleware
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
+
+// ✅ Socket.io with same CORS
+const io = new Server(server, {
+  cors: {
+    origin: function (origin, callback) {
+      if (
+        !origin ||
+        origin.includes("localhost") ||
+        origin.includes("vercel.app")
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error("Socket CORS not allowed: " + origin));
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  }
+});
+
+app.set('io', io);
 
 // ✅ Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -57,18 +67,17 @@ app.use('/api/promo', require('./routes/promo'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/profile', require('./routes/profile'));
 
-// ✅ Test Route
+// ✅ Test route
 app.get('/', (req, res) => {
   res.json({ message: 'GoGoods API running!' });
 });
 
-// ✅ Socket.io Events
+// ✅ Socket events
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   socket.on('join', (userId) => {
     socket.join(userId);
-    console.log(`User ${userId} joined room`);
   });
 
   socket.on('join_order', (orderId) => {
@@ -84,7 +93,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// ✅ MongoDB + Server Start
+// ✅ MongoDB + Server start
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected!');
