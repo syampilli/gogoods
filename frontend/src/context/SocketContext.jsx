@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import toast from 'react-hot-toast';
 
@@ -13,7 +12,6 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (!user) {
-      // User logout అయితే socket disconnect
       socketRef.current?.disconnect();
       socketRef.current = null;
       setNotifications([]);
@@ -21,50 +19,63 @@ export const SocketProvider = ({ children }) => {
       return;
     }
 
-    // Connect
-    socketRef.current = io(
-  import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000',
-  {
-    reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
-  }
-);
-    const socket = socketRef.current;
+    // ✅ Dynamic import — socket load fail అయినా app block కాదు
+    const initSocket = async () => {
+      try {
+        const { io } = await import('socket.io-client');
+        
+        const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+        
+        socketRef.current = io(socketUrl, {
+          reconnection: true,
+          reconnectionAttempts: 3,
+          reconnectionDelay: 2000,
+          timeout: 10000,
+        });
 
-    socket.on('connect', () => {
-      // Personal room join
-      socket.emit('join', user.id);
-    });
+        const socket = socketRef.current;
 
-    // Notification వచ్చినప్పుడు
-    socket.on('notification', (notif) => {
-      setNotifications(prev => {
-        // Duplicate avoid
-        if (prev.find(n => n._id === notif._id)) return prev;
-        return [notif, ...prev];
-      });
-      setUnreadCount(c => c + 1);
-      toast(notif.message, {
-        icon: notif.type === 'chat' ? '💬' : '📦',
-        duration: 5000,
-        style: { maxWidth: '380px' }
-      });
-    });
+        socket.on('connect', () => {
+          socket.emit('join', user.id);
+        });
 
-    // New order available — drivers కి
-    socket.on('new_order_available', () => {
-      if (user.role === 'driver') {
-        toast('🔔 New delivery job available!', { duration: 4000 });
+        socket.on('connect_error', (err) => {
+          // ✅ Socket error వచ్చినా app block కాదు — silently fail
+          console.warn('Socket connection failed:', err.message);
+        });
+
+        socket.on('notification', (notif) => {
+          setNotifications(prev => {
+            if (prev.find(n => n._id === notif._id)) return prev;
+            return [notif, ...prev];
+          });
+          setUnreadCount(c => c + 1);
+          toast(notif.message, {
+            icon: notif.type === 'chat' ? '💬' : '📦',
+            duration: 5000,
+            style: { maxWidth: '380px' }
+          });
+        });
+
+        socket.on('new_order_available', () => {
+          if (user.role === 'driver') {
+            toast('🔔 New delivery job available!', { duration: 4000 });
+          }
+        });
+
+      } catch (err) {
+        // ✅ Socket import fail అయినా app work చేస్తుంది
+        console.warn('Socket init failed:', err);
       }
-    });
+    };
+
+    initSocket();
 
     return () => {
-      socket.disconnect();
+      socketRef.current?.disconnect();
     };
   }, [user]);
 
-  // Existing notifications load
   useEffect(() => {
     if (!user) return;
     import('../api/axios').then(({ default: API }) => {
@@ -73,7 +84,7 @@ export const SocketProvider = ({ children }) => {
           setNotifications(r.data);
           setUnreadCount(r.data.filter(n => !n.read).length);
         })
-        .catch(() => {});
+        .catch(() => {}); // ✅ Silently fail
     });
   }, [user]);
 
